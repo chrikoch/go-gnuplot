@@ -1,3 +1,5 @@
+//Package gnuplot can plot images. Currently only time-based x-Data is supported.
+//gnuplot has to be installed!
 package gnuplot
 
 import (
@@ -9,31 +11,39 @@ import (
 	"os"
 )
 
+//Plotter represents data and methods to generate a PNG-image using gnuplot
+//Don't use Plotter directly, see NewPlotter()
 type Plotter struct {
-	data        []TimeDataPoint
-	gnuplot_cmd string
-	Title       string //the Title of the plotted data
-	XTicsCount  int    //if >0, number of xtics to be used (not really accurate)
+	data       []TimeDataPoint
+	gnuplotCmd string
+	Title      string //the Title of the plotted data
+	XTicsCount int    //if >0, number of xtics to be used (not really accurate)
 }
 
+//A TimeDataPoint represents a single measurement.
 type TimeDataPoint struct {
 	X time.Time
 	Y int
 }
 
+//NewPlotter returns an initialized plotter.
+//On error (gnuplot not found in path) nil is returned
 func NewPlotter() *Plotter {
 	var p Plotter
 	p.findGnuplotInPath()
-	if len(p.gnuplot_cmd) == 0 {
+	if len(p.gnuplotCmd) == 0 {
 		return nil
 	}
 	return &p
 }
 
+//AddTimeDataPoint adds a new measurement.
 func (p *Plotter) AddTimeDataPoint(d TimeDataPoint) {
 	p.data = append(p.data, d)
 }
 
+//Plot generates a png image from the measurements added by AddTimeDataPoint()
+//returns image in PNG format or err on error
 func (p *Plotter) Plot() (image []byte, err error) {
 	//get tmp file for data
 	datafile, err := ioutil.TempFile("", "plotter")
@@ -83,6 +93,15 @@ func (p *Plotter) Plot() (image []byte, err error) {
 	commandfile.WriteString("set output '" + imagefile.Name() + "';\n")
 	commandfile.WriteString("set xdata time;\n")
 	commandfile.WriteString("set timefmt '%s';\n")
+
+	//xtics
+	if p.XTicsCount > 0 && lastTime.After(firstTime) {
+		//calculate xtics interval
+		xinterval := int(lastTime.Sub(firstTime).Seconds() / float64(p.XTicsCount))
+		commandfile.WriteString(fmt.Sprintf("set xtics %v;\n", xinterval))
+	}
+
+	//plot
 	plotCmd := fmt.Sprintf("plot '%v' using 1:2", datafile.Name())
 	if len(p.Title) > 0 {
 		plotCmd = fmt.Sprintf("%v title '%v'", plotCmd, p.Title)
@@ -90,16 +109,9 @@ func (p *Plotter) Plot() (image []byte, err error) {
 	plotCmd = plotCmd + ";\n"
 	commandfile.WriteString(plotCmd)
 
-	if p.XTicsCount > 0 && lastTime.After(firstTime) {
-
-		//calculate xtics interval
-		xinterval := int(lastTime.Sub(firstTime).Seconds() / float64(p.XTicsCount))
-		commandfile.WriteString(fmt.Sprintf("set xtics %v;\n", xinterval))
-	}
-
 	commandfile.Close()
 
-	err = exec.Command(p.gnuplot_cmd, commandfile.Name()).Run()
+	err = exec.Command(p.gnuplotCmd, commandfile.Name()).Run()
 	if err != nil {
 		return image, err
 	}
@@ -113,9 +125,9 @@ func (p *Plotter) Plot() (image []byte, err error) {
 }
 
 func (p *Plotter) findGnuplotInPath() {
-	p.gnuplot_cmd = ""
+	p.gnuplotCmd = ""
 	s, err := exec.LookPath("gnuplot")
 	if err == nil {
-		p.gnuplot_cmd = s
+		p.gnuplotCmd = s
 	}
 }
