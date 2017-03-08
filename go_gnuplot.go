@@ -56,6 +56,7 @@ func (p *Plotter) Plot() (image []byte, err error) {
 	//write data file
 	var firstTime, lastTime time.Time
 	var min, max int
+	firstItem := true
 	for _, item := range p.data {
 
 		//remember first and last datapoint
@@ -67,12 +68,15 @@ func (p *Plotter) Plot() (image []byte, err error) {
 		}
 
 		//remember highest and lowest Y Value
-		if min > item.Y {
+		if min > item.Y || firstItem {
 			min = item.Y
 		}
-		if max < item.Y {
+		if max < item.Y || firstItem {
 			max = item.Y
 		}
+
+		firstItem = false
+
 		s := fmt.Sprintf("%v %v\n", item.X.Unix(), item.Y)
 		_, err = datafile.WriteString(s)
 		if err != nil {
