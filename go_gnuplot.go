@@ -18,6 +18,7 @@ type Plotter struct {
 	gnuplotCmd string
 	Title      string //the Title of the plotted data
 	XTicsCount int    //if >0, number of xtics to be used (not really accurate)
+	YSpace     int    //if >0, percent of space to be left above and under the datapoints
 }
 
 //A TimeDataPoint represents a single measurement.
@@ -54,6 +55,7 @@ func (p *Plotter) Plot() (image []byte, err error) {
 
 	//write data file
 	var firstTime, lastTime time.Time
+	var min, max int
 	for _, item := range p.data {
 
 		//remember first and last datapoint
@@ -64,6 +66,13 @@ func (p *Plotter) Plot() (image []byte, err error) {
 			lastTime = item.X
 		}
 
+		//remember highest and lowest Y Value
+		if min > item.Y {
+			min = item.Y
+		}
+		if max < item.Y {
+			max = item.Y
+		}
 		s := fmt.Sprintf("%v %v\n", item.X.Unix(), item.Y)
 		_, err = datafile.WriteString(s)
 		if err != nil {
@@ -99,6 +108,12 @@ func (p *Plotter) Plot() (image []byte, err error) {
 		//calculate xtics interval
 		xinterval := int(lastTime.Sub(firstTime).Seconds() / float64(p.XTicsCount))
 		commandfile.WriteString(fmt.Sprintf("set xtics %v;\n", xinterval))
+	}
+
+	//yrange
+	if p.YSpace > 0 {
+		space := (max - min) * (p.YSpace / 100)
+		commandfile.WriteString(fmt.Sprintf("set yrange [%v:%v];\n", min-space, max+space))
 	}
 
 	//plot
