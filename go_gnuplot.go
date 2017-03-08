@@ -115,7 +115,7 @@ func (p *Plotter) Plot() (image []byte, err error) {
 	}
 
 	//yrange
-	if p.YSpace > 0 {
+	if p.YSpace > 0 && max > min {
 		space := (max - min) * (p.YSpace / 100)
 		commandfile.WriteString(fmt.Sprintf("set yrange [%v:%v];\n", min-space, max+space))
 	}
