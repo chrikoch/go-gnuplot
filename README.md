@@ -1,6 +1,4 @@
-<span style="display: inline-block;">
 [![API Reference](http://img.shields.io/badge/api-reference-blue.svg)](https://godoc.org/github.com/chrikoch/go-gnuplot)
-</span>
 
 # go-gnuplot
 Golang wrapper for gnuplot command line <br>
