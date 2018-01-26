@@ -3,28 +3,85 @@
 package gnuplot
 
 import (
+	"errors"
 	"os/exec"
 	"time"
 
 	"fmt"
 	"io/ioutil"
 	"os"
+
+	"log"
 )
 
 //Plotter represents data and methods to generate a PNG-image using gnuplot
 //Don't use Plotter directly, see NewPlotter()
 type Plotter struct {
-	data       []TimeDataPoint
+	Data       GnuplotData
 	gnuplotCmd string
 	Title      string //the Title of the plotted data
 	XTicsCount int    //if >0, number of xtics to be used (not really accurate)
 	YSpace     int    //if >0, percent of space to be left above and under the datapoints
 }
 
-//A TimeDataPoint represents a single measurement.
+type GnuplotDataPointGeneric interface {
+	GetX() string
+	GetY() string
+}
+
+type GnuplotData interface {
+	AddDataPoint(GnuplotDataPointGeneric) error
+	GetDataPoints() []GnuplotDataPointGeneric
+	GetSpecialCommands() []string
+}
+
+//A TimeDataPoint represents a single measurement with a time on the x-axis and an int on the y-axis
 type TimeDataPoint struct {
 	X time.Time
 	Y int
+}
+
+func (t TimeDataPoint) GetX() string {
+	return fmt.Sprintf("%v", t.X.Unix())
+}
+
+func (t TimeDataPoint) GetY() string {
+	return fmt.Sprintf("%v", t.Y)
+}
+
+type GnuplotTimeData struct {
+	Data []TimeDataPoint
+}
+
+func (g *GnuplotTimeData) GetDataPoints() []GnuplotDataPointGeneric {
+	var returnSlice []GnuplotDataPointGeneric = make([]GnuplotDataPointGeneric, len(g.Data))
+
+	for i, d := range g.Data {
+		returnSlice[i] = d
+	}
+	return returnSlice
+}
+
+func (g *GnuplotTimeData) AddDataPoint(d GnuplotDataPointGeneric) error {
+	log.Println("Start of AddDataPoint")
+	log.Println(g)
+	log.Println(g.Data)
+	_, ok := d.(TimeDataPoint)
+	if !ok {
+		return errors.New("Invalid data point")
+	}
+
+	g.Data = append(g.Data, d.(TimeDataPoint))
+
+	log.Println(g)
+	log.Println(g.Data)
+
+	log.Println("End of AddDataPoint")
+	return nil
+}
+
+func (g *GnuplotTimeData) GetSpecialCommands() []string {
+	return nil
 }
 
 //NewPlotter returns an initialized plotter.
@@ -38,10 +95,19 @@ func NewPlotter() *Plotter {
 	return &p
 }
 
+/*
 //AddTimeDataPoint adds a new measurement.
+//Convenience function to support old behaviour
 func (p *Plotter) AddTimeDataPoint(d TimeDataPoint) {
-	p.data = append(p.data, d)
-}
+	//do we currently store GnuplotTimeData?
+	_, ok := p.Data.(GnuplotTimeData)
+
+	if !ok {
+		p.Data = GnuplotTimeData{}
+	}
+
+	p.Data.AddData(d)
+}*/
 
 //Plot generates a png image from the measurements added by AddTimeDataPoint()
 //returns image in PNG format or err on error
@@ -51,33 +117,33 @@ func (p *Plotter) Plot() (image []byte, err error) {
 	if err != nil {
 		return image, err
 	}
-	defer os.Remove(datafile.Name())
+	//	defer os.Remove(datafile.Name())
 
 	//write data file
-	var firstTime, lastTime time.Time
-	var min, max int
-	firstItem := true
-	for _, item := range p.data {
+	//var firstTime, lastTime time.Time
+	//var min, max int
+	//firstItem := true
+	for _, item := range p.Data.GetDataPoints() {
+		/*
+			//remember first and last datapoint
+			if item.X.Before(firstTime) || firstTime.Equal(time.Time{}) {
+				firstTime = item.X
+			}
+			if item.X.After(lastTime) {
+				lastTime = item.X
+			}
 
-		//remember first and last datapoint
-		if item.X.Before(firstTime) || firstTime.Equal(time.Time{}) {
-			firstTime = item.X
-		}
-		if item.X.After(lastTime) {
-			lastTime = item.X
-		}
+			//remember highest and lowest Y Value
+			if min > item.Y || firstItem {
+				min = item.Y
+			}
+			if max < item.Y || firstItem {
+				max = item.Y
+			}
 
-		//remember highest and lowest Y Value
-		if min > item.Y || firstItem {
-			min = item.Y
-		}
-		if max < item.Y || firstItem {
-			max = item.Y
-		}
-
-		firstItem = false
-
-		s := fmt.Sprintf("%v %v\n", item.X.Unix(), item.Y)
+			firstItem = false
+		*/
+		s := fmt.Sprintf("%v %v\n", item.GetX(), item.GetY())
 		_, err = datafile.WriteString(s)
 		if err != nil {
 			return image, err
@@ -99,7 +165,7 @@ func (p *Plotter) Plot() (image []byte, err error) {
 	if err != nil {
 		return image, err
 	}
-	defer os.Remove(commandfile.Name())
+	//defer os.Remove(commandfile.Name())
 
 	//write commands to file
 	commandfile.WriteString("set terminal png;\n")
@@ -107,19 +173,20 @@ func (p *Plotter) Plot() (image []byte, err error) {
 	commandfile.WriteString("set xdata time;\n")
 	commandfile.WriteString("set timefmt '%s';\n")
 
-	//xtics
-	if p.XTicsCount > 0 && lastTime.After(firstTime) {
-		//calculate xtics interval
-		xinterval := int(lastTime.Sub(firstTime).Seconds() / float64(p.XTicsCount))
-		commandfile.WriteString(fmt.Sprintf("set xtics %v;\n", xinterval))
-	}
+	/*
+		//xtics
+		if p.XTicsCount > 0 && lastTime.After(firstTime) {
+			//calculate xtics interval
+			xinterval := int(lastTime.Sub(firstTime).Seconds() / float64(p.XTicsCount))
+			commandfile.WriteString(fmt.Sprintf("set xtics %v;\n", xinterval))
+		}
 
-	//yrange
-	if p.YSpace > 0 && max > min {
-		space := int(float64((max - min)) * (float64(p.YSpace) / 100))
-		commandfile.WriteString(fmt.Sprintf("set yrange [%v:%v];\n", min-space, max+space))
-	}
-
+		//yrange
+		if p.YSpace > 0 && max > min {
+			space := int(float64((max - min)) * (float64(p.YSpace) / 100))
+			commandfile.WriteString(fmt.Sprintf("set yrange [%v:%v];\n", min-space, max+space))
+		}
+	*/
 	//plot
 	plotCmd := fmt.Sprintf("plot '%v' using 1:2", datafile.Name())
 	if len(p.Title) > 0 {
